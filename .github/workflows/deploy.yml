@@ -37,7 +37,7 @@ jobs:
       
       - name: Install Node.js dependencies
         run: |
-          cd src
+          cd src/notify
           npm install
           npm install aws-sdk
       
