@@ -33,6 +33,9 @@ jobs:
         UNIQUE_ID=$(echo $GITHUB_SHA | cut -c1-7)
         echo "STACK_NAME=prod-${UNIQUE_ID}-${TIMESTAMP}" >> $GITHUB_ENV
         echo "STACK_NAME_SHORT=prod-${UNIQUE_ID}" >> $GITHUB_ENV
+        echo "Generated names:"
+        echo "Full: ${STACK_NAME}"
+        echo "Short: ${STACK_NAME_SHORT}"
 
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -49,14 +52,14 @@ jobs:
 
     - name: SAM Build and Deploy
       run: |
-        set -e
-        trap 'aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}' ERR
-        
-        sam build && sam deploy \
+        sam deploy \
           --stack-name ${{ env.STACK_NAME }} \
           --region ${{ env.AWS_REGION }} \
           --capabilities CAPABILITY_IAM \
-          --parameter-overrides "Environment=prod NotificationEmail=${{ secrets.NOTIFICATION_EMAIL }}" \
+          --parameter-overrides \
+              "Environment=prod \
+              NotificationEmail=${{ secrets.NOTIFICATION_EMAIL }} \
+              StackNameShort=${{ env.STACK_NAME_SHORT }}" \
           --no-confirm-changeset \
           --resolve-s3
 

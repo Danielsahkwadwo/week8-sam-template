@@ -46,7 +46,7 @@ Resources:
   NotificationFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub "notify-${STACK_NAME_SHORT}"
+      FunctionName: !Sub "notify-${StackNameShort}"
       CodeUri: src/notify/
       Handler: app.lambdaHandler
       Policies:
