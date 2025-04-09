@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "deploy-prod" to confirm production deployment'
+        description: 'Type "deploy-prod" to confirm'
         required: true
         default: 'cancel'
 
@@ -23,18 +23,15 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
 
     - name: Generate unique stack name
-      id: stack-name
       run: |
         TIMESTAMP=$(date +%Y%m%d%H%M%S)
         UNIQUE_ID=$(echo $GITHUB_SHA | cut -c1-7)
         echo "STACK_NAME=${BASE_STACK_NAME}-v${TIMESTAMP}-${UNIQUE_ID}" >> $GITHUB_ENV
-        echo "Generated production stack name: ${STACK_NAME}"
 
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -43,56 +40,31 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Install AWS SAM CLI
-      run: |
-        pip install aws-sam-cli
-        sam --version
-
     - name: Install dependencies
       run: |
         cd src/notify
         npm ci --production
         cd ../..
 
-    - name: SAM Build
-      run: sam build
-
-    - name: SAM Deploy with cleanup
-      id: deploy
+    - name: SAM Build and Deploy
       run: |
         set -e
-        trap 'echo "::error::Deployment failed - initiating cleanup"; aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}' ERR
+        trap 'aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}' ERR
         
-        # Using --resolve-s3 to let SAM manage the bucket
-        sam deploy \
+        sam build && sam deploy \
           --stack-name ${{ env.STACK_NAME }} \
           --region ${{ env.AWS_REGION }} \
           --capabilities CAPABILITY_IAM \
           --parameter-overrides "Environment=prod NotificationEmail=${{ secrets.NOTIFICATION_EMAIL }}" \
           --no-confirm-changeset \
-          --no-fail-on-empty-changeset \
           --resolve-s3
 
-    - name: Post-deployment verification
-      if: success()
-      run: |
-        aws cloudformation describe-stacks \
-          --stack-name ${{ env.STACK_NAME }} \
-          --query 'Stacks[0].Outputs' \
-          --output table
-
-    - name: Cleanup old production stacks
+    - name: Cleanup old stacks
       if: always()
       run: |
-        STACKS=$(aws cloudformation list-stacks \
+        # Keep last 3 stacks always
+        aws cloudformation list-stacks \
           --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
           --query "StackSummaries[?starts_with(StackName, '${{ env.BASE_STACK_NAME }}-') && \
           to_string(CreationTime) < '$(date -d "${{ env.STACK_RETENTION_DAYS }} days ago" --utc +'%Y-%m-%dT%H:%M:%S')'].StackName" \
-          --output text | head -n -3)
-        
-        [ -z "$STACKS" ] && exit 0
-        
-        for STACK in $STACKS; do
-          echo "Deleting old production stack: $STACK"
-          aws cloudformation delete-stack --stack-name $STACK
-        done
+          --output text | head -n -3 | xargs -r -I {} aws cloudformation delete-stack --stack-name {}
