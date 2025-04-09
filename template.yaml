@@ -37,7 +37,7 @@ Resources:
   NotificationTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: !Sub "upload-notifications-${Environment}"
+      TopicName: !Sub "upload-notifications-${Environment}-${AWS::StackName}"
       Subscription:
         - Protocol: email
           Endpoint: !Ref NotificationEmail
@@ -46,7 +46,7 @@ Resources:
   NotificationFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub "s3-upload-notifier-${Environment}"
+      FunctionName: !Sub "s3-upload-notifier-${Environment}-${AWS::StackName}"
       CodeUri: src/notify/
       Handler: app.lambdaHandler
       Policies:

@@ -7,7 +7,8 @@ on:
 
 env:
   AWS_REGION: eu-west-1
-  STACK_NAME: s3-sns-notifier-dev
+  ARTIFACTS_BUCKET: week8-upload-bucket-dev  # Replace with your bucket name
+  BASE_STACK_NAME: s3-sns-notifier-dev
 
 jobs:
   deploy:
@@ -22,6 +23,14 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
+
+    - name: Generate unique stack name
+      id: stack-name
+      run: |
+        TIMESTAMP=$(date +%Y%m%d%H%M%S)
+        UNIQUE_ID=$(echo $GITHUB_SHA | cut -c1-7)
+        echo "STACK_NAME=${BASE_STACK_NAME}-${TIMESTAMP}-${UNIQUE_ID}" >> $GITHUB_ENV
+        echo "Generated stack name: ${STACK_NAME}"
 
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -44,10 +53,45 @@ jobs:
     - name: SAM Build
       run: sam build
 
-    - name: SAM Deploy
+    - name: Check if S3 bucket exists
+      id: check-bucket
       run: |
+        if aws s3api head-bucket --bucket ${{ env.ARTIFACTS_BUCKET }} 2>/dev/null; then
+          echo "bucket_exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "bucket_exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create S3 Bucket if not exists
+      if: steps.check-bucket.outputs.bucket_exists == 'false'
+      run: aws s3 mb s3://${{ env.ARTIFACTS_BUCKET }}
+
+    - name: SAM Deploy with cleanup on failure
+      id: deploy
+      run: |
+        set -e
+        trap 'aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}' ERR
         sam deploy \
           --stack-name ${{ env.STACK_NAME }} \
+          --s3-bucket ${{ env.ARTIFACTS_BUCKET }} \
           --region ${{ env.AWS_REGION }} \
           --capabilities CAPABILITY_IAM \
-          --parameter-overrides "Environment=dev NotificationEmail=${{ secrets.NOTIFICATION_EMAIL }}"
+          --parameter-overrides "Environment=dev NotificationEmail=${{ secrets.NOTIFICATION_EMAIL }}" \
+          --no-confirm-changeset \
+          --no-fail-on-empty-changeset \
+          --resolve-s3
+
+    - name: Cleanup old stacks
+      if: always()
+      run: |
+        # Delete stacks older than 1 day
+        STACKS=$(aws cloudformation list-stacks \
+          --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
+          --query "StackSummaries[?starts_with(StackName, '${{ env.BASE_STACK_NAME }}-') && \
+          to_string(CreationTime) < '$(date -d '1 day ago' --utc +'%Y-%m-%dT%H:%M:%S')'].StackName" \
+          --output text)
+        
+        for STACK in $STACKS; do
+          echo "Deleting old stack: $STACK"
+          aws cloudformation delete-stack --stack-name $STACK
+        done

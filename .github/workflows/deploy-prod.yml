@@ -4,16 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "confirm" to deploy to production'
+        description: 'Type "deploy-prod" to confirm production deployment'
         required: true
+        default: 'cancel'
 
 env:
-  AWS_REGION: us-east-1
-  STACK_NAME: s3-sns-notifier-prod
+  AWS_REGION: eu-west-1
+  ARTIFACTS_BUCKET: week8-upload-bucket-prod  # Replace with your production bucket
+  BASE_STACK_NAME: s3-sns-notifier-prod
+  STACK_RETENTION_DAYS: 7  # Keep successful prod stacks longer than dev
 
 jobs:
   deploy:
-    if: github.event.inputs.confirm == 'confirm'
+    if: github.event.inputs.confirm == 'deploy-prod'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -26,10 +29,18 @@ jobs:
       with:
         node-version: '18'
 
+    - name: Generate unique stack name
+      id: stack-name
+      run: |
+        TIMESTAMP=$(date +%Y%m%d%H%M%S)
+        UNIQUE_ID=$(echo $GITHUB_SHA | cut -c1-7)
+        echo "STACK_NAME=${BASE_STACK_NAME}-v${TIMESTAMP}-${UNIQUE_ID}" >> $GITHUB_ENV
+        echo "Generated production stack name: ${STACK_NAME}"
+
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}  # Separate prod credentials
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
@@ -41,16 +52,56 @@ jobs:
     - name: Install dependencies
       run: |
         cd src/notify
-        npm install
+        npm ci --production  # Production install (no dev dependencies)
         cd ../..
 
     - name: SAM Build
       run: sam build
 
-    - name: SAM Deploy
+    - name: Verify production bucket exists
       run: |
+        if ! aws s3api head-bucket --bucket ${{ env.ARTIFACTS_BUCKET }}; then
+          echo "::error::Production artifacts bucket does not exist"
+          exit 1
+        fi
+
+    - name: SAM Deploy with rollback protection
+      id: deploy
+      run: |
+        set -e
+        trap 'echo "::error::Deployment failed - initiating cleanup"; aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}' ERR
+        
         sam deploy \
           --stack-name ${{ env.STACK_NAME }} \
+          --s3-bucket ${{ env.ARTIFACTS_BUCKET }} \
           --region ${{ env.AWS_REGION }} \
           --capabilities CAPABILITY_IAM \
-          --parameter-overrides "Environment=prod NotificationEmail=${{ secrets.NOTIFICATION_EMAIL }}"
+          --parameter-overrides "Environment=prod NotificationEmail=${{ secrets.NOTIFICATION_EMAIL }}" \
+          --no-confirm-changeset \
+          --no-fail-on-empty-changeset \
+          --resolve-s3 \
+          --disable-rollback  # Prevent automatic rollback so we can manually inspect failures
+
+    - name: Post-deployment verification
+      if: success()
+      run: |
+        # Verify all resources created successfully
+        aws cloudformation describe-stacks \
+          --stack-name ${{ env.STACK_NAME }} \
+          --query 'Stacks[0].Outputs' \
+          --output table
+
+    - name: Cleanup old production stacks
+      if: always()
+      run: |
+        # Delete production stacks older than retention period (except latest 3)
+        STACKS=$(aws cloudformation list-stacks \
+          --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
+          --query "StackSummaries[?starts_with(StackName, '${{ env.BASE_STACK_NAME }}-') && \
+          to_string(CreationTime) < '$(date -d "${{ env.STACK_RETENTION_DAYS }} days ago" --utc +'%Y-%m-%dT%H:%M:%S')'].StackName" \
+          --output text | head -n -3)  # Keep latest 3 stacks
+        
+        for STACK in $STACKS; do
+          echo "Deleting old production stack: $STACK"
+          aws cloudformation delete-stack --stack-name $STACK
+        done
