@@ -46,7 +46,7 @@ Resources:
   NotificationFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub "s3-upload-notifier-${Environment}-${AWS::StackName}"
+      FunctionName: !Sub "notify-${STACK_NAME_SHORT}"
       CodeUri: src/notify/
       Handler: app.lambdaHandler
       Policies:

@@ -29,9 +29,10 @@ jobs:
 
     - name: Generate unique stack name
       run: |
-        TIMESTAMP=$(date +%Y%m%d%H%M%S)
+        TIMESTAMP=$(date +%Y%m%d%H%M)
         UNIQUE_ID=$(echo $GITHUB_SHA | cut -c1-7)
-        echo "STACK_NAME=${BASE_STACK_NAME}-${TIMESTAMP}-${UNIQUE_ID}" >> $GITHUB_ENV
+        echo "STACK_NAME=dev-${UNIQUE_ID}-${TIMESTAMP}" >> $GITHUB_ENV
+        echo "STACK_NAME_SHORT=dev-${UNIQUE_ID}" >> $GITHUB_ENV
 
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
