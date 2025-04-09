@@ -42,7 +42,7 @@ jobs:
           npm install aws-sdk
       
       - name: Build SAM application
-        run: sam build --template-file Template.json
+        run: sam build --template-file template.json
       
       - name: Deploy SAM application
         run: |
