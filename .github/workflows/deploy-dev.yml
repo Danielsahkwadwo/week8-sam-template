@@ -10,47 +10,32 @@ on:
 
 env:
   AWS_REGION: eu-west-1
-  BASE_STACK_NAME: s3-sns-notifier-dev
-  STACK_RETENTION_DAYS: 1  # Shorter retention for dev
 
 jobs:
   deploy:
     if: github.event.inputs.confirm == 'deploy-dev'
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-
+    
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '18'
 
-    - name: Generate unique stack name
+    - name: Generate names
+      id: names
       run: |
-        TIMESTAMP=$(date +%Y%m%d%H%M)
         UNIQUE_ID=$(echo $GITHUB_SHA | cut -c1-7)
-        echo "STACK_NAME=dev-${UNIQUE_ID}-${TIMESTAMP}" >> $GITHUB_ENV
-        echo "STACK_NAME_SHORT=dev-${UNIQUE_ID}" >> $GITHUB_ENV
-        echo "Generated names:"
-        echo "Full: ${STACK_NAME}"
-        echo "Short: ${STACK_NAME_SHORT}"
+        echo "STACK_NAME=dev-$UNIQUE_ID-$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
+        echo "STACK_NAME_SHORT=dev-$UNIQUE_ID" >> $GITHUB_ENV
+        echo "STACK_NAME=${STACK_NAME}" >> $GITHUB_OUTPUT
+        echo "STACK_NAME_SHORT=${STACK_NAME_SHORT}" >> $GITHUB_OUTPUT
 
-    - name: Configure AWS Credentials
+    - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Install dependencies
-      run: |
-        cd src/notify
-        npm install
-        cd ../..
-
-    - name: SAM Build and Deploy
+    - name: SAM deploy
       run: |
         sam deploy \
           --stack-name ${{ env.STACK_NAME }} \
@@ -62,12 +47,3 @@ jobs:
               StackNameShort=${{ env.STACK_NAME_SHORT }}" \
           --no-confirm-changeset \
           --resolve-s3
-
-    - name: Cleanup old stacks
-      if: always()
-      run: |
-        aws cloudformation list-stacks \
-          --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
-          --query "StackSummaries[?starts_with(StackName, '${{ env.BASE_STACK_NAME }}-') && \
-          to_string(CreationTime) < '$(date -d "${{ env.STACK_RETENTION_DAYS }} days ago" --utc +'%Y-%m-%dT%H:%M:%S')'].StackName" \
-          --output text | xargs -r -I {} aws cloudformation delete-stack --stack-name {}

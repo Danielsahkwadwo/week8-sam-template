@@ -12,6 +12,9 @@ Parameters:
     Type: String
     Description: Email address to receive SNS notifications
     Default: your-email@example.com
+  StackNameShort:
+    Type: String
+    Description: Short stack identifier for resource naming
 
 Globals:
   Function:
