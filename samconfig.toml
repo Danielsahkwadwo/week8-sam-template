@@ -1,0 +1,25 @@
+version = 0.1
+
+[default]
+stack_name = "s3-sns-notifier"  # Base stack name
+region = "us-east-1"           # Default region
+confirm_changeset = true        # Require confirmation before deploying
+capabilities = "CAPABILITY_IAM" # Required for IAM resources
+
+[dev.deploy.parameters]
+stack_name = "s3-sns-notifier-dev"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-xxxxxxxx"
+s3_prefix = "s3-sns-notifier-dev"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "Environment=\"dev\" NotificationEmail=\"dev-email@example.com\""
+confirm_changeset = false       # For CI/CD, we typically disable confirmation
+
+[prod.deploy.parameters]
+stack_name = "s3-sns-notifier-prod"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-xxxxxxxx"
+s3_prefix = "s3-sns-notifier-prod"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "Environment=\"prod\" NotificationEmail=\"prod-email@example.com\""
+confirm_changeset = true       # For production, keep confirmation enabled

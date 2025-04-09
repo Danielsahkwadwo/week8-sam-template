@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Event-driven architecture with S3 upload triggering SNS notifications
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Deployment environment (dev/prod)
+    AllowedValues: [dev, prod]
+    Default: dev
+  NotificationEmail:
+    Type: String
+    Description: Email address to receive SNS notifications
+    Default: your-email@example.com
+
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: nodejs18.x
+    MemorySize: 128
+    Environment:
+      Variables:
+        SNS_TOPIC_ARN: !Ref NotificationTopic
+
+Resources:
+  # S3 Bucket
+  UploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "upload-bucket-${Environment}-${AWS::AccountId}"
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:*'
+            Function: !GetAtt NotificationFunction.Arn
+
+  # SNS Topic
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "upload-notifications-${Environment}"
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+
+  # Lambda Function
+  NotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "s3-upload-notifier-${Environment}"
+      CodeUri: src/notify/
+      Handler: app.lambdaHandler
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt NotificationTopic.TopicName
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref UploadBucket
+            Events: s3:ObjectCreated:*
+
+  # S3 Bucket Policy to allow Lambda invocation
+  BucketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt NotificationFunction.Arn
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt UploadBucket.Arn
+
+Outputs:
+  UploadBucketName:
+    Description: "Name of the S3 upload bucket"
+    Value: !Ref UploadBucket
+  NotificationTopicARN:
+    Description: "ARN of the SNS notification topic"
+    Value: !Ref NotificationTopic
