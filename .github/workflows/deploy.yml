@@ -42,12 +42,12 @@ jobs:
           npm install aws-sdk
       
       - name: Build SAM application
-        run: sam build --template-file template.json
+        run: sam build --template-file template.yaml
       
       - name: Deploy SAM application
         run: |
           sam deploy \
-            --template-file template.yaml \
+            --template-file .aws-sam/build/template.yaml \
             --stack-name s3-sns-notifier-${{ matrix.environment }} \
             --s3-bucket week8-upload-bucket-dev \
             --region eu-west-1 \
