@@ -32,7 +32,7 @@ jobs:
 
       - name: Generate package-lock.json
         run: |
-          cd src
+          cd src/notify
           npm install --package-lock-only
       
       - name: Install Node.js dependencies
