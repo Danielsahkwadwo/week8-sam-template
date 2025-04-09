@@ -15,6 +15,9 @@ Parameters:
   StackNameShort:
     Type: String
     Description: Short stack identifier for resource naming
+  ArtifactsBucket:
+    Type: String
+    Description: S3 bucket for deployment artifacts
 
 Globals:
   Function:
@@ -78,3 +81,6 @@ Outputs:
   NotificationTopicARN:
     Description: "ARN of the SNS notification topic"
     Value: !Ref NotificationTopic
+  ArtifactsBucket:
+    Description: "Bucket containing deployment artifacts"
+    Value: !Ref ArtifactsBucket

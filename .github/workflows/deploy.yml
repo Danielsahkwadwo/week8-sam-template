@@ -1,0 +1,59 @@
+name: SAM Deploy Node.js
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: ['dev', 'prod']
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+      
+      - name: Install SAM CLI
+        run: pip install aws-sam-cli
+
+      - name: Generate package-lock.json
+        run: |
+          cd src
+          npm install --package-lock-only
+      
+      - name: Install Node.js dependencies
+        run: |
+          cd src
+          npm install
+          npm install aws-sdk
+      
+      - name: Build SAM application
+        run: sam build --template-file Template.json
+      
+      - name: Deploy SAM application
+        run: |
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name s3-sns-notifier-${{ matrix.environment }} \
+            --s3-bucket week8-upload-bucket-dev \
+            --region eu-west-1 \
+            --parameter-overrides \
+              EnvironmentName=${{ matrix.environment }} \
+              NotificationEmail=${{ secrets.NOTIFICATION_EMAIL }} \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
